@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grader Agent - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 min-h-screen text-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <header class="mb-8 flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900">Grader Agent</h1>
+                <p class="mt-1 text-sm text-gray-500">Manage and grade student submissions</p>
+            </div>
+            <div class="flex space-x-4">
+                <button onclick="runAll()"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Run All Pending
+                </button>
+                <a href="/api/export"
+                    class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Export CSV
+                </a>
+            </div>
+        </header>
+
+        <!-- Upload / New Task Section -->
+        <div id="upload-section" class="mb-8 bg-white shadow sm:rounded-lg p-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">New Grading Task</h3>
+            <form id="upload-form" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Assignment Mode -->
+                    <div>
+                        <label for="mode" class="block text-sm font-medium text-gray-700">Assignment Mode</label>
+                        <select id="mode" name="mode"
+                            class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md border">
+                            <option value="essay">Essay</option>
+                            <option value="qa">Short Answer (Q&A)</option>
+                            <option value="mc">Multiple Choice</option>
+                            <option value="coding">Coding Notebook</option>
+                        </select>
+                    </div>
+
+                    <!-- Rubric Upload -->
+                    <div>
+                        <label for="rubric-upload" class="block text-sm font-medium text-gray-700">Rubric / Key
+                            (Optional)</label>
+                        <input type="file" id="rubric-upload" name="rubric-upload"
+                            class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                        <p class="mt-1 text-xs text-gray-500">If omitted, uses default test rubric.</p>
+                    </div>
+                </div>
+
+                <!-- File Upload -->
+                <div>
+                    <label for="file-upload" class="block text-sm font-medium text-gray-700">Student Submissions</label>
+                    <div id="drop-zone"
+                        class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-indigo-500 cursor-pointer transition-colors">
+                        <div class="space-y-1 text-center">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none"
+                                viewBox="0 0 48 48" aria-hidden="true">
+                                <path
+                                    d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <div class="flex text-sm text-gray-600 justify-center">
+                                <label for="file-upload"
+                                    class="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500">
+                                    <span>Upload files</span>
+                                    <input id="file-upload" name="file-upload" type="file" class="sr-only" multiple
+                                        accept=".pdf,.txt,.ipynb">
+                                </label>
+                                <p class="pl-1">or drag and drop</p>
+                            </div>
+                            <p class="text-xs text-gray-500">PDF, TXT, IPYNB up to 10MB</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end">
+                    <button type="submit" id="upload-btn"
+                        class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Upload & Grade
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Submissions List -->
+        <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div class="px-4 py-5 sm:px-6 flex justify-between items-center">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">Submissions</h3>
+                <span id="count-badge"
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    0 items
+                </span>
+            </div>
+            <div class="border-t border-gray-200">
+                <ul id="submission-list" role="list" class="divide-y divide-gray-200">
+                    <!-- Items will be injected here -->
+                    <li class="px-4 py-4 sm:px-6 text-center text-gray-500">Loading...</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const uploadForm = document.getElementById('upload-form');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-upload');
+        const listEl = document.getElementById('submission-list');
+        const countBadge = document.getElementById('count-badge');
+        const uploadBtn = document.getElementById('upload-btn');
+
+        // Drag and drop Visual Feedback
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-indigo-500', 'bg-indigo-50');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-indigo-500', 'bg-indigo-50');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-indigo-500', 'bg-indigo-50');
+            // Assign files to input
+            fileInput.files = e.dataTransfer.files;
+            // Update visual text if needed, or just let user click upload
+            const text = dropZone.querySelector('.text-gray-600');
+            if (text) text.innerText = `${e.dataTransfer.files.length} files selected`;
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const text = dropZone.querySelector('.text-gray-600');
+            if (text && fileInput.files.length) {
+                text.innerText = `${fileInput.files.length} files selected`;
+            }
+        });
+
+        // Form Submit
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const files = fileInput.files;
+            if (!files.length) {
+                alert("Please select at least one submission file.");
+                return;
+            }
+
+            const formData = new FormData();
+            // Submissions
+            for (let file of files) {
+                formData.append('files', file);
+            }
+
+            // Mode
+            const mode = document.getElementById('mode').value;
+            formData.append('mode', mode);
+
+            // Rubric
+            const rubricFile = document.getElementById('rubric-upload').files[0];
+            if (rubricFile) {
+                formData.append('rubric', rubricFile);
+            }
+
+            try {
+                uploadBtn.disabled = true;
+                uploadBtn.innerText = "Uploading...";
+
+                const res = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (res.ok) {
+                    await fetchSubmissions();
+                    // Reset form
+                    uploadForm.reset();
+                    // Reset visual
+                    const text = dropZone.querySelector('.text-gray-600');
+                    if (text) text.innerHTML = `
+                        <label for="file-upload" class="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500">
+                                    <span>Upload files</span>
+                                    <input id="file-upload" name="file-upload" type="file" class="sr-only" multiple accept=".pdf,.txt,.ipynb">
+                        </label>
+                        <p class="pl-1">or drag and drop</p>
+                    `;
+                    alert("Upload successful!");
+                } else {
+                    alert("Upload failed");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Error uploading files");
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.innerText = "Upload & Grade";
+            }
+        });
+
+        async function fetchSubmissions() {
+            try {
+                const res = await fetch('/api/submissions');
+                const data = await res.json();
+                renderList(data);
+                countBadge.innerText = `${data.length} items`;
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function renderList(submissions) {
+            if (submissions.length === 0) {
+                listEl.innerHTML = '<li class="px-4 py-8 text-center text-gray-500">No submissions yet</li>';
+                return;
+            }
+
+            listEl.innerHTML = submissions.map(sub => `
+                <li class="px-4 py-4 sm:px-6 hover:bg-gray-50">
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1 min-w-0">
+                            <h4 class="text-sm font-medium text-indigo-600 truncate">${sub.student_id}</h4>
+                            <p class="text-sm text-gray-500">${sub.filename}</p>
+                        </div>
+                        <div class="flex flex-col items-end space-y-2">
+                             ${getStatusBadge(sub.status)}
+                             ${sub.score !== null ? `<span class="text-sm font-bold text-gray-900">Score: ${sub.score} / ${sub.max_score}</span>` : ''}
+                        </div>
+                        <div class="ml-4 flex-shrink-0 flex space-x-2">
+                            ${sub.status === 'UPLOADED' || sub.status === 'ERROR' ?
+                    `<button onclick="runOne('${sub.id}')" class="text-indigo-600 hover:text-indigo-900 text-sm font-medium">Run</button>` : ''}
+                            <a href="/review/${sub.id}" class="text-gray-600 hover:text-gray-900 text-sm font-medium">Review</a>
+                        </div>
+                    </div>
+                </li>
+            `).join('');
+        }
+
+        function getStatusBadge(status) {
+            const classes = {
+                'UPLOADED': 'bg-gray-100 text-gray-800',
+                'PROCESSING': 'bg-yellow-100 text-yellow-800',
+                'GRADED': 'bg-green-100 text-green-800',
+                'ERROR': 'bg-red-100 text-red-800'
+            };
+            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${classes[status] || 'bg-gray-100'}">
+                ${status}
+            </span>`;
+        }
+
+        async function runOne(id) {
+            try {
+                await fetch(`/api/submissions/${id}/process`, { method: 'POST' });
+                fetchSubmissions(); // Refresh logic
+            } catch (e) {
+                alert("Error starting grading");
+            }
+        }
+
+        async function runAll() {
+            try {
+                await fetch(`/api/process-all`, { method: 'POST' });
+                fetchSubmissions();
+            } catch (e) {
+                alert("Error starting batch grading");
+            }
+        }
+
+        // Poll for updates if there are processing items
+        setInterval(() => {
+            fetchSubmissions();
+        }, 3000);
+
+        // Initial load
+        fetchSubmissions();
+    </script>
+</body>
+
+</html>

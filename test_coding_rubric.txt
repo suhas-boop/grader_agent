@@ -1,0 +1,3 @@
+Criteria:
+1. Function Correctness (5 points) Code defines add function correctly.
+2. Output Accuracy (5 points) Output is 5.

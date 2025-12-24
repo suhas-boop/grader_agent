@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grader Agent</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        #pdf-wrapper {
+            position: relative;
+            overflow: auto;
+        }
+
+        .pdf-page {
+            position: relative;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .textLayer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            opacity: 0.2;
+            line-height: 1.0;
+        }
+
+        .textLayer>span {
+            color: transparent;
+            position: absolute;
+            white-space: pre;
+            cursor: text;
+            transform-origin: 0% 0%;
+        }
+
+        .highlight {
+            background-color: rgba(255, 255, 0, 0.5);
+            border-bottom: 2px solid orange;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script>
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+    </script>
+</head>
+
+<body class="bg-gray-100 min-h-screen p-8">
+    <div id="mainContainer" class="w-full max-w-7xl mx-auto bg-white shadow-lg rounded-lg p-6">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">AI Grader Agent</h1>
+
+        <!-- Tabs -->
+        <div class="flex mb-6 border-b">
+            <button id="tabManual" class="mr-4 pb-2 border-b-2 border-blue-600 font-bold"
+                onclick="switchTab('manual')">Manual Upload</button>
+            <button id="tabCanvas" class="pb-2 border-b-2 border-transparent text-gray-500"
+                onclick="switchTab('canvas')">Canvas Integration</button>
+        </div>
+
+        <!-- Canvas Integration Section -->
+        <div id="canvasSection" class="mb-8 p-6 border rounded bg-gray-50 hidden">
+            <h2 class="text-xl font-semibold mb-4">Import from Canvas</h2>
+
+            <!-- Connection -->
+            <div id="canvasConnect" class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Canvas URL</label>
+                        <input type="text" id="canvasUrl" class="mt-1 block w-full p-2 border rounded"
+                            placeholder="https://canvas.instructure.com" value="https://canvas.instructure.com">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">API Key</label>
+                        <input type="password" id="canvasKey" class="mt-1 block w-full p-2 border rounded">
+                    </div>
+                </div>
+                <button onclick="connectCanvas()"
+                    class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">Connect</button>
+            </div>
+
+            <!-- Selection -->
+            <div id="canvasSelect" class="space-y-4 hidden mt-4 border-t pt-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Select Course</label>
+                    <select id="courseSelect" class="mt-1 block w-full p-2 border rounded"
+                        onchange="loadAssignments()"></select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Select Assignment</label>
+                    <select id="assignmentSelect" class="mt-1 block w-full p-2 border rounded"></select>
+                </div>
+                <button onclick="importSubmissions()"
+                    class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Import Submissions</button>
+            </div>
+
+            <!-- Import Results -->
+            <div id="importResults" class="mt-4 hidden">
+                <h3 class="font-bold">Imported Submissions</h3>
+                <ul id="submissionList" class="list-disc pl-5 text-sm text-gray-600"></ul>
+            </div>
+        </div>
+
+        <!-- Manual Upload Form -->
+        <div id="manualSection" class="mb-8 p-6 border rounded bg-gray-50">
+            <h2 class="text-xl font-semibold mb-4">New Grading Task</h2>
+            <form id="gradingForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Assignment Mode</label>
+                    <select id="mode" class="mt-1 block w-full p-2 border rounded">
+                        <option value="essay">Essay</option>
+                        <option value="qa">Short Answer (Q&A)</option>
+                        <option value="mc">Multiple Choice / True-False</option>
+                        <option value="coding">Coding (Notebook)</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Student Submission (File)</label>
+                        <input type="file" id="submissionFile" class="mt-1 block w-full" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Rubric / Key (File)</label>
+                        <input type="file" id="rubricFile" class="mt-1 block w-full" required>
+                    </div>
+                </div>
+
+                <button type="submit"
+                    class="w-full bg-blue-600 text-white p-3 rounded hover:bg-blue-700 transition flex justify-center items-center">
+                    <span id="btnText">Grade Assessment</span>
+                    <div id="loadingSpinner" class="loader ml-2 hidden"></div>
+                </button>
+            </form>
+        </div>
+
+        <!-- Results Section -->
+        <div id="resultsArea" class="hidden">
+            <div class="flex justify-between items-center mb-6 border-b pb-4">
+                <h2 class="text-2xl font-bold text-gray-800">Grading Analysis</h2>
+                <div class="text-right">
+                    <p class="text-sm text-gray-600">Total Score</p>
+                    <p class="text-3xl font-bold text-blue-800"><span id="totalScore"></span> / <span
+                            id="maxScore"></span></p>
+                </div>
+            </div>
+
+            <!-- Dynamic Grid: Starts as 2 cols (Rubric|Results), expands to 3 (Sub|Rub|Res) -->
+            <div id="resultsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6 h-[75vh]">
+
+                <!-- Col 1: Submission (Hidden Overlay/Toggle) -->
+                <div id="colSubmission" class="h-full hidden">
+                    <h3 class="font-bold text-lg mb-2 text-gray-700 flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                </path>
+                            </svg>
+                            Submission
+                        </div>
+                        <button onclick="hideSubmission()"
+                            class="text-xs text-gray-400 hover:text-gray-600">Close</button>
+                    </h3>
+                    <div id="submissionView"
+                        class="flex-grow p-4 bg-gray-50 border rounded overflow-y-auto font-mono text-xs whitespace-pre-wrap shadow-inner text-gray-800 hidden">
+                    </div>
+                    <iframe id="pdf-frame"
+                        class="flex-grow min-h-0 bg-gray-50 border rounded shadow-inner hidden w-full"></iframe>
+                </div>
+
+                <!-- Col 2: Rubric -->
+                <div id="colRubric" class="flex flex-col h-full">
+                    <h3 class="font-bold text-lg mb-2 text-gray-700 flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01">
+                            </path>
+                        </svg>
+                        Rubric
+                    </h3>
+                    <div id="rubricView"
+                        class="flex-grow p-4 bg-gray-50 border rounded overflow-y-auto font-mono text-xs whitespace-pre-wrap shadow-inner text-gray-800">
+                    </div>
+                </div>
+
+                <!-- Col 3: Results -->
+                <div id="colResults" class="flex flex-col h-full overflow-y-auto pr-2">
+
+                    <!-- Pinned Rubric (Hidden by default) -->
+                    <div id="rubricPinnedContainer" class="hidden mb-4 border-b pb-2">
+                        <div class="flex justify-between items-center mb-1">
+                            <h3 class="font-bold text-gray-700 text-sm">Rubric Reference</h3>
+                            <button onclick="exitFocusMode()"
+                                class="text-xs text-blue-600 hover:text-blue-800">Expand</button>
+                        </div>
+                        <div id="rubricPinnedContent"
+                            class="text-xs text-gray-600 max-h-40 overflow-y-auto bg-gray-50 p-2 rounded whitespace-pre-wrap font-mono border">
+                        </div>
+                    </div>
+
+                    <h3 class="font-bold text-lg mb-2 text-gray-700 flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Feedback
+                    </h3>
+
+                    <div class="mb-4">
+                        <h4 class="font-semibold text-gray-600 text-sm">Student ID</h4>
+                        <p id="studentId" class="font-mono font-bold text-gray-900"></p>
+                    </div>
+
+                    <div class="mb-4">
+                        <h4 class="font-semibold text-gray-600 text-sm mb-1">Overall Feedback</h4>
+                        <div id="overallFeedback"
+                            class="p-3 bg-blue-50 rounded text-sm text-gray-800 border border-blue-100"></div>
+                    </div>
+
+                    <div>
+                        <h4 class="font-semibold text-gray-600 text-sm mb-2">Detailed Criteria</h4>
+                        <div id="detailedResults" class="space-y-3">
+                            <!-- Dynamic Items -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+
+</html>

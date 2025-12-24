@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f9fafb;
+        }
+
+        #viewer-container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            overflow: auto;
+        }
+
+        .pdf-page {
+            position: relative;
+            margin: 0 auto 10px auto;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .textLayer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            opacity: 0.2;
+            line-height: 1.0;
+        }
+
+        .textLayer>span {
+            color: transparent;
+            position: absolute;
+            white-space: pre;
+            cursor: text;
+            transform-origin: 0% 0%;
+        }
+
+        .highlight {
+            background-color: rgba(255, 255, 0, 0.5);
+            border-bottom: 2px solid orange;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script>
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+    </script>
+</head>
+
+<body>
+    <div id="viewer-container"></div>
+
+    <script>
+        let pdfDoc = null;
+        let pdfScale = 1.2;
+
+        // Get file URL from query param
+        const urlParams = new URLSearchParams(window.location.search);
+        const fileUrl = urlParams.get('file');
+
+        if (fileUrl) {
+            renderPdf(fileUrl);
+        } else {
+            document.getElementById('viewer-container').innerText = "No PDF file specified.";
+        }
+
+        async function renderPdf(url) {
+            const loadingTask = pdfjsLib.getDocument(url);
+            try {
+                pdfDoc = await loadingTask.promise;
+                const container = document.getElementById('viewer-container');
+                container.innerHTML = '';
+
+                for (let num = 1; num <= pdfDoc.numPages; num++) {
+                    await renderPage(num, container);
+                }
+            } catch (e) {
+                console.error("Error loading PDF:", e);
+                document.getElementById('viewer-container').innerText = "Error loading PDF.";
+            }
+        }
+
+        async function renderPage(num, container) {
+            const page = await pdfDoc.getPage(num);
+            const viewport = page.getViewport({ scale: pdfScale });
+
+            const pageDiv = document.createElement('div');
+            pageDiv.className = 'pdf-page';
+            pageDiv.style.width = `${viewport.width}px`;
+            pageDiv.style.height = `${viewport.height}px`;
+            container.appendChild(pageDiv);
+
+            const canvas = document.createElement('canvas');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            canvas.style.display = 'block';
+            pageDiv.appendChild(canvas);
+
+            const renderContext = {
+                canvasContext: canvas.getContext('2d'),
+                viewport: viewport
+            };
+            page.render(renderContext);
+
+            const textLayerDiv = document.createElement('div');
+            textLayerDiv.className = 'textLayer';
+            textLayerDiv.style.width = `${viewport.width}px`;
+            textLayerDiv.style.height = `${viewport.height}px`;
+            pageDiv.appendChild(textLayerDiv);
+
+            const textContent = await page.getTextContent();
+            pdfjsLib.renderTextLayer({
+                textContent: textContent,
+                container: textLayerDiv,
+                viewport: viewport,
+                textDivs: []
+            });
+        }
+
+        // Listen for messages from parent window
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'HIGHLIGHT') {
+                highlightCitations(event.data.citations);
+            }
+        });
+
+        function highlightCitations(citations) {
+            document.querySelectorAll('.highlight').forEach(el => el.classList.remove('highlight'));
+            if (!citations || citations.length === 0) return;
+
+            const spans = document.querySelectorAll('.textLayer > span');
+            let firstMatch = null;
+
+            citations.forEach(quote => {
+                if (!quote || quote.length < 5) return;
+                const cleanQuote = quote.trim().toLowerCase();
+
+                spans.forEach(span => {
+                    const spanText = span.textContent.trim().toLowerCase();
+                    if (!spanText) return;
+
+                    if (cleanQuote.includes(spanText) || spanText.includes(cleanQuote)) {
+                        span.classList.add('highlight');
+                        if (!firstMatch) firstMatch = span;
+                    }
+                });
+            });
+
+            if (firstMatch) {
+                firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review Submission</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Split pane layout */
+        .split-container {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .pdf-pane {
+            flex: 1;
+            border-right: 1px solid #e5e7eb;
+            background: #f3f4f6;
+            position: relative;
+        }
+
+        .rubric-pane {
+            width: 400px;
+            overflow-y: auto;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -2px 0 5px rgba(0, 0, 0, 0.05);
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="split-container">
+        <!-- PDF Viewer Iframe -->
+        <div class="pdf-pane">
+            <!-- Ensure filename is properly encoded/handled in URL -->
+            <iframe id="pdf-frame" src="/viewer_frame?file=/files/{{ filename }}"></iframe>
+        </div>
+
+        <!-- Grading Interface -->
+        <div class="rubric-pane p-6">
+            <div class="mb-6 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-gray-900">Grading Review</h2>
+                <div class="flex space-x-4 items-center">
+                    <a id="prev-link" href="#" class="hidden text-sm text-indigo-600 hover:text-indigo-800">&larr;
+                        Previous</a>
+                    <a href="/dashboard" class="text-sm text-gray-500 hover:text-gray-700">Dashboard</a>
+                    <a id="next-link" href="#" class="hidden text-sm text-indigo-600 hover:text-indigo-800">Next
+                        &rarr;</a>
+                </div>
+            </div>
+
+            <div id="loading" class="text-gray-500 text-center py-4">Loading assessment...</div>
+
+            <div id="content" class="hidden flex-1 flex flex-col">
+                <!-- Score Display -->
+                <div class="bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Total Score</label>
+                    <div class="flex items-center space-x-2">
+                        <input type="number" id="total-score"
+                            class="block w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-lg font-bold p-2 border"
+                            step="0.5">
+                        <span class="text-gray-500 font-medium">/ <span id="max-score">100</span></span>
+                    </div>
+                </div>
+
+                <!-- Feedback -->
+                <div class="mb-6 flex-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Overall Feedback</label>
+                    <textarea id="feedback-text" rows="6"
+                        class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border border-gray-300 rounded-md p-2"></textarea>
+                </div>
+
+                <!-- Detailed Criteria -->
+                <div id="criteria-list" class="space-y-4 mb-6">
+                    <!-- Criteria injected here -->
+                </div>
+
+                <!-- Actions -->
+                <div class="mt-auto border-t pt-4">
+                    <button onclick="saveChanges()" id="save-btn"
+                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Save Final Grade
+                    </button>
+                    <p id="save-msg" class="text-center text-sm text-green-600 mt-2 hidden">Saved successfully!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const subId = "{{ sub_id }}";
+        const loadingEl = document.getElementById('loading');
+        const contentEl = document.getElementById('content');
+        const scoreInput = document.getElementById('total-score');
+        const maxScoreEl = document.getElementById('max-score');
+        const feedbackInput = document.getElementById('feedback-text');
+        const criteriaList = document.getElementById('criteria-list');
+        const saveMsg = document.getElementById('save-msg');
+        const prevLink = document.getElementById('prev-link');
+        const nextLink = document.getElementById('next-link');
+
+        async function loadData() {
+            try {
+                // Parallel fetch for details and list
+                const [resDetails, resList] = await Promise.all([
+                    fetch(`/api/submissions/${subId}`),
+                    fetch(`/api/submissions`)
+                ]);
+
+                const data = await resDetails.json();
+                const list = await resList.json();
+
+                if (!data.details) {
+                    loadingEl.innerText = "No grading details found. Please run grading first.";
+                    return;
+                }
+
+                setupNavigation(list);
+                render(data);
+            } catch (e) {
+                console.error(e);
+                loadingEl.innerText = "Error loading data.";
+            }
+        }
+
+        function setupNavigation(list) {
+            if (!list || !list.length) return;
+
+            const idx = list.findIndex(s => s.id === subId);
+            if (idx === -1) return;
+
+            if (idx > 0) {
+                const prevId = list[idx - 1].id;
+                prevLink.href = `/review/${prevId}`;
+                prevLink.classList.remove('hidden');
+            }
+
+            if (idx < list.length - 1) {
+                const nextId = list[idx + 1].id;
+                nextLink.href = `/review/${nextId}`;
+                nextLink.classList.remove('hidden');
+            }
+        }
+
+        function render(data) {
+            loadingEl.classList.add('hidden');
+            contentEl.classList.remove('hidden');
+
+            // Metadata/Top level
+            scoreInput.value = data.metadata.score || data.details.score || 0;
+            maxScoreEl.innerText = data.metadata.max_score || data.details.max_score || 100;
+            feedbackInput.value = data.metadata.feedback_summary || data.details.feedback || "";
+
+            // Render Criteria
+            if (data.details.detailed_results) {
+                criteriaList.innerHTML = '<h3 class="font-bold text-gray-800 mb-2">Criteria Breakdown</h3>';
+                data.details.detailed_results.forEach((item, idx) => {
+                    // Assuming item has criteria_scores keys, usually one per feedback item in this model
+                    // Adjust based on actual Evaluator output structure.
+                    // The evaluator outputs detailed_results as List[GradingFeedback].
+                    // GradingFeedback has criteria_scores: Dict[str, float], feedback: str, citations: List.
+
+                    const criteriaName = Object.keys(item.criteria_scores)[0] || `Criterion ${idx + 1}`;
+                    const cScore = Object.values(item.criteria_scores)[0] || 0;
+
+                    const div = document.createElement('div');
+                    div.className = 'bg-white border rounded-md p-3 text-sm hover:shadow-sm transition-shadow';
+                    div.innerHTML = `
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-semibold text-indigo-700">${criteriaName}</span>
+                            <span class="bg-gray-100 text-gray-800 px-2 py-0.5 rounded text-xs font-bold">${cScore} pts</span>
+                        </div>
+                        <p class="text-gray-600 mb-2">${item.feedback}</p>
+                        ${item.citations && item.citations.length ? `
+                        <div class="flex flex-wrap gap-1">
+                            <button onclick='highlight(${JSON.stringify(item.citations).replace(/'/g, "&apos;")})' class="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-200 hover:bg-indigo-100 cursor-pointer">
+                                Ref (${item.citations.length})
+                            </button>
+                        </div>
+                    ` : ''}
+                `;
+                    criteriaList.appendChild(div);
+                });
+            }
+        }
+
+        function highlight(citations) {
+            // Ensure citations is an array
+            const citationsArray = Array.isArray(citations) ? citations : [citations];
+
+            const frame = document.getElementById('pdf-frame');
+            frame.contentWindow.postMessage({
+                type: 'HIGHLIGHT',
+                citations: citationsArray
+            }, '*');
+        }
+
+        async function saveChanges() {
+            const btn = document.getElementById('save-btn');
+            btn.disabled = true;
+            btn.innerText = "Saving...";
+
+            try {
+                const res = await fetch(`/api/submissions/${subId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        score: parseFloat(scoreInput.value),
+                        feedback: feedbackInput.value
+                    })
+                });
+
+                if (res.ok) {
+                    saveMsg.classList.remove('hidden');
+                    setTimeout(() => saveMsg.classList.add('hidden'), 3000);
+                } else {
+                    alert("Failed to save");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Error saving");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Save Final Grade";
+            }
+        }
+
+        loadData();
+    </script>
+</body>
+
+</html>
