@@ -8,7 +8,7 @@ class LLMClient:
     """Wrapper for Google Gemini API using google-genai SDK."""
     
     def __init__(self, model_name: str = "gemini-2.5-flash", temperature: float = 0.2):
-        self.api_key = "AIzaSyAgh14_O7pQKYGlFdHN6s0BwnX1VEXuqss"
+        self.api_key = "AIzaSyBddBdG8b3_mn0q9C9I2F-njTQbvF7-THM"
         # os.getenv("GEMINI_API_KEY", "AIzaSyAgh14_O7pQKYGlFdHN6s0BwnX1VEXuqss")
         if not self.api_key:
             print("WARNING: GEMINI_API_KEY not found in environment variables.")
