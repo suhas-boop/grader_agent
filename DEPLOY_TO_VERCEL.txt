@@ -1,0 +1,67 @@
+DEPLOYMENT GUIDE: HOSTING GRADER AGENT ON VERCEL
+
+This application is configured for deployment on Vercel using the Python runtime.
+
+IMPORTANT:
+This deployment uses ephemeral storage (/tmp). This means uploaded files and grading results will DISAPPEAR when the server shuts down or restarts (roughly every 15-60 minutes or after deployments). For permanent storage, you must integrate an external database (Project TBD).
+
+=========================================
+OPTION 1: DEPLOY VIA GITHUB (RECOMMENDED)
+=========================================
+
+1. Push your code to a GitHub repository:
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   # (Replace URL below with your actual repo URL)
+   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
+   git push -u origin main
+
+2. Log in to Vercel (https://vercel.com) and click "Add New..." -> "Project".
+
+3. Select your GitHub repository calling "Import".
+
+4. Configure the Project:
+   - Framework Preset: Other
+   - Root Directory: ./ (default)
+   - Build Command: (leave empty, vercel.json handles this)
+   - Install Command: (leave empty, Vercel installs from requirements.txt automatically)
+   - Output Directory: (leave empty)
+
+5. Environment Variables:
+   Expand "Environment Variables" and add:
+   - Name: GEMINI_API_KEY
+   - Value: (Paste your actual API key)
+
+6. Click "Deploy".
+
+=========================================
+OPTION 2: DEPLOY VIA VERCEL CLI
+=========================================
+
+1. Install Vercel CLI (if not installed):
+   npm i -g vercel
+
+2. Login:
+   vercel login
+
+3. Deploy from the project root:
+   vercel
+
+   - Follow the prompts (Select scope, Link to existing project? [No], Project Name [grader-agent], Directory [./]).
+   - When asked to override settings, say No (auto-detection works).
+
+4. Set Environment Variables (Production):
+   vercel env add GEMINI_API_KEY
+   (Paste your key when prompted, select 'production', 'preview', and 'development')
+
+5. Redeploy to apply variables:
+   vercel --prod
+
+=========================================
+TROUBLESHOOTING
+=========================================
+- 500 Error? Check logs in Vercel Dashboard -> Deployments -> [Click Deployment] -> Logs.
+- "Module not found"? Ensure the missing library is listed in `requirements.txt`.
+- "File not found"? Remember that the filesystem is read-only. We only write to `/tmp`.

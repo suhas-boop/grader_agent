@@ -63,6 +63,11 @@ def review(request: Request, sub_id: str):
         raise HTTPException(status_code=404, detail="Submission not found")
     ext = os.path.splitext(sub.filename)[1]
     stored_filename = f"{sub.id}{ext}"
+    
+    # Ensure file is available locally for the viewer
+    # get_file_path will checking existence or download from Supabase
+    db.get_file_path(stored_filename)
+    
     return templates.TemplateResponse("review.html", {"request": request, "sub_id": sub_id, "filename": stored_filename})
 
 @app.get("/viewer_frame")
@@ -95,16 +100,28 @@ def process_grading_task(sub_id: str, file_path: str, mode: str):
         print(f"Submission {sub_id} not found during processing")
         return
     print(f"Starting grading for {sub_id}...")
+    # Ensure file is available locally (downloads from Supabase if needed)
+    local_path = db.get_file_path(file_path)
+    
+    if not local_path:
+        print(f"File not found or failed to download: {file_path}")
+        return
+
     try:
         db.update_status(sub_id, "PROCESSING")
         
         # Load content
-        content = ingestion.load_submission(file_path)
+        content = ingestion.load_submission(local_path)
         
         # Load rubric
         if hasattr(sub, 'rubric_path') and sub.rubric_path:
-             rubric_path = sub.rubric_path
-             print(f"Using custom rubric: {rubric_path}")
+             # Rubric might also need downloading!
+             rubric_path = db.get_file_path(sub.rubric_path)
+             if not rubric_path:
+                 print("Failed to download custom rubric")
+                 rubric_path = DEFAULT_RUBRIC_PATH
+             else:
+                 print(f"Using custom rubric: {rubric_path}")
         else:
              rubric_path = DEFAULT_RUBRIC_PATH
              
@@ -136,27 +153,27 @@ def process_grading_task(sub_id: str, file_path: str, mode: str):
 
 @app.post("/api/upload")
 async def upload_files(
+    background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...), 
     mode: str = "essay",
     rubric: Optional[UploadFile] = File(None)
 ):
-    rubric_path = None
+    rubric_path_ref = None
     if rubric:
-        # Save rubric once for the batch
+        # Save rubric
         rubric_filename = f"rubric_{uuid.uuid4()}.txt"
-        rubric_path = os.path.join(db.uploads_dir, rubric_filename)
-        with open(rubric_path, "wb") as buffer:
-            shutil.copyfileobj(rubric.file, buffer)
+        content = await rubric.read()
+        rubric_path_ref = db.save_file(content, rubric_filename)
 
     uploaded_ids = []
     for file in files:
         sub_id = str(uuid.uuid4())
         ext = os.path.splitext(file.filename)[1]
         filename = f"{sub_id}{ext}"
-        file_path = os.path.join(db.uploads_dir, filename)
         
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Save file via persistence layer
+        content = await file.read()
+        saved_path_ref = db.save_file(content, filename)
             
         metadata = SubmissionMetadata(
             id=sub_id,
@@ -165,10 +182,15 @@ async def upload_files(
             assignment_type=mode,
             # Placeholder student ID logic
             student_id=os.path.splitext(file.filename)[0],
-            rubric_path=rubric_path 
+            rubric_path=rubric_path_ref 
         )
         db.add_submission(metadata)
         uploaded_ids.append(sub_id)
+        
+        # Trigger background processing
+        # We pass the saved_path_ref (which is either a local path or filename)
+        # The background task will resolve it.
+        background_tasks.add_task(process_grading_task, sub_id, saved_path_ref, mode)
         
     return {"message": f"Uploaded {len(files)} files", "ids": uploaded_ids}
 
@@ -222,16 +244,12 @@ async def process_submission(sub_id: str, background_tasks: BackgroundTasks):
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
     
-    found_file = None
-    for f in os.listdir(db.uploads_dir):
-        if f.startswith(sub_id):
-            found_file = os.path.join(db.uploads_dir, f)
-            break
-            
-    if not found_file:
-         raise HTTPException(status_code=500, detail="File missing on disk")
-
-    background_tasks.add_task(process_grading_task, sub_id, found_file, sub.assignment_type)
+    # The file_path for process_grading_task should be the identifier used by db.save_file
+    # which is typically the filename itself (e.g., "{sub_id}.ext")
+    # We can reconstruct this from metadata.
+    file_identifier = f"{sub.id}{os.path.splitext(sub.filename)[1]}"
+    
+    background_tasks.add_task(process_grading_task, sub_id, file_identifier, sub.assignment_type)
     return {"message": "Grading queued"}
 
 @app.post("/api/process-all")
@@ -240,15 +258,29 @@ async def process_all(background_tasks: BackgroundTasks):
     count = 0
     for sub in subs:
         if sub.status in ["UPLOADED", "ERROR"]:
-            found_file = None
-            for f in os.listdir(db.uploads_dir):
-                if f.startswith(sub.id):
-                    found_file = os.path.join(db.uploads_dir, f)
-                    break
+            # Re-run logic...
+            # Warning: found_file calculation in original code was:
+            # found_file = os.path.join(db.uploads_dir, f"{sub.id}.pdf") ...
+            # We should update this to use db.get_file_path logic or just reconstruct the filename if we know the convention.
+            # Our convention: filename is stored as "{id}.ext" in `saved_path_ref` passed to background task.
+            # BUT, we didn't store the extension in metadata explicitly (except in filename).
+            # Let's try to infer it from the 'rubric_path' or just check valid extensions.
             
-            if found_file:
-                background_tasks.add_task(process_grading_task, sub.id, found_file, sub.assignment_type)
-                count += 1
+            # Actually, process_grading_task expects a path/identifier.
+            # Since we store uniform filenames in uploads (sub_id + ext), we can try to find it.
+            
+            # Simple fix: Use the original filename extension from metadata (risky if modified) 
+            # OR check local/remote.
+            
+            # Let's rely on db.uploads_dir check for legacy local or try standard extensions.
+            # possible_exts = ['.pdf', '.txt', '.ipynb', '.docx'] # This comment block is from the instruction, not actual code.
+            target_ext = os.path.splitext(sub.filename)[1]
+            
+            # Construct the identifier we likely used
+            file_identifier = f"{sub.id}{target_ext}"
+            
+            background_tasks.add_task(process_grading_task, sub.id, file_identifier, sub.assignment_type)
+            count += 1
     return {"message": f"Queued {count} submissions for grading"}
 
 @app.get("/api/export")

@@ -1,7 +1,7 @@
 pandas
 PyPDF2
 nbformat
-google-generativeai
+google-genai
 python-dotenv
 docx2txt
 fastapi
@@ -9,3 +9,4 @@ uvicorn
 jinja2
 python-multipart
 pydantic
+supabase

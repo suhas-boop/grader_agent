@@ -85,12 +85,20 @@ class CodeGradingStrategy(GradingStrategy):
         """
         
         # Reuse the schema-based generation from Essay strategy concept
-        from pydantic import BaseModel
-        from typing import Dict
+        from pydantic import BaseModel, ConfigDict
+        from typing import List, Dict
+        from src.models import CriterionScore
+
+        class CriterionEval(BaseModel):
+            criteria_name: str
+            score: float
+            feedback: str
+            model_config = ConfigDict(extra='forbid')
+
         class LLMEvaluation(BaseModel):
-            criteria_scores: Dict[str, float]
-            criteria_feedback: Dict[str, str]
+            criteria_evaluations: List[CriterionEval]
             overall_feedback: str
+            model_config = ConfigDict(extra='forbid')
             
         result_content = self.llm.generate_json(prompt, LLMEvaluation)
         
@@ -107,15 +115,22 @@ class CodeGradingStrategy(GradingStrategy):
         detailed_results = []
         total_score = 0.0
         
+        # Helper to find eval by name
+        def find_eval(name):
+             for e in result_content.criteria_evaluations:
+                 if e.criteria_name == name: return e
+             return None
+
         for criterion in rubric.criteria:
-            score = result_content.criteria_scores.get(criterion.name, 0.0)
-            feedback = result_content.criteria_feedback.get(criterion.name, "")
+            eval_item = find_eval(criterion.name)
+            score = eval_item.score if eval_item else 0.0
+            feedback = eval_item.feedback if eval_item else "No feedback provided."
             total_score += score
             
             detailed_results.append(GradingFeedback(
                 score=score,
                 feedback=feedback,
-                criteria_scores={criterion.name: score}
+                criteria_scores=[CriterionScore(criteria_name=criterion.name, score=score)]
             ))
 
         return GradingResult(

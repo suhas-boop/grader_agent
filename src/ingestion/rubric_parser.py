@@ -24,22 +24,40 @@ class RubricParser:
             # Updated to handle Q prefix and pts/points
             pattern = re.compile(r"^(?:Q)?\d+\.\s+(.+?)\s+\((\d+(?:\.\d+)?)\s+(?:points|pts)\)(.*)$", re.IGNORECASE)
             
+            current_criteria = None
+            
             for line in lines:
                 line = line.strip()
                 if not line:
                     continue
-                # Relaxed check: Allow digit start or 'Q' start
-                if not (line[0].isdigit() or line.upper().startswith('Q')):
-                    continue
-                    
+                
+                # Check if line is a new criterion header
                 match = pattern.match(line)
                 if match:
+                    # Save previous if exists
+                    if current_criteria:
+                        criteria.append(current_criteria)
+                    
                     name = match.group(1).strip()
                     points = float(match.group(2))
-                    description = match.group(3).strip().lstrip(':').strip()
-                    if not description: description = name # Fallback
+                    # Group 3 might capture inline description if any, but usually it's empty in this format
+                    inline_desc = match.group(3).strip().lstrip(':').strip()
                     
-                    criteria.append(RubricCriteria(name=name, description=description, max_points=points))
-                    total += points
+                    current_criteria = RubricCriteria(name=name, description=inline_desc, max_points=points)
+                else:
+                    # Append strictly to description if we have an active criterion
+                    if current_criteria:
+                         # Append line to description
+                         if current_criteria.description:
+                             current_criteria.description += " " + line
+                         else:
+                             current_criteria.description = line
+            
+            # Append last one
+            if current_criteria:
+                criteria.append(current_criteria)
+            
+            # Recalculate total
+            total = sum(c.max_points for c in criteria)
             
             return Rubric(criteria=criteria, total_points=total)

@@ -1,0 +1,1 @@
+['Internship overview: role + hours + what you did', 'New things learned', 'Surprises', 'Interview positioning: how learnings help in interviews', 'EMPAC insights/observations']
