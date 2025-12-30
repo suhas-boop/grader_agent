@@ -1,5 +1,5 @@
 from src.grading.strategy import GradingStrategy
-from src.models import GradingResult, Rubric, AssignmentType, GradingFeedback
+from src.models import GradingResult, Rubric, AssignmentType, GradingFeedback, CriterionScore
 import json
 
 class MCTFGradingStrategy(GradingStrategy):
@@ -59,7 +59,7 @@ class MCTFGradingStrategy(GradingStrategy):
             detailed_results.append(GradingFeedback(
                 score=score,
                 feedback=feedback,
-                criteria_scores={qid: score}
+                criteria_scores=[CriterionScore(criteria_name=qid, score=score)]
             ))
 
         return GradingResult(

@@ -91,10 +91,10 @@
     "id": "9a4d65f4-188f-408e-b8bc-c01f8cfd7a76",
     "filename": "francisemily_70174_10037896_BUSN 198R - Assignment #3.pdf",
     "upload_time": "2025-12-22T13:38:13.173200",
-    "status": "UPLOADED",
-    "score": null,
-    "max_score": null,
-    "feedback_summary": null,
+    "status": "GRADED",
+    "score": 0.0,
+    "max_score": 50.0,
+    "feedback_summary": "Error generating grade from LLM.",
     "assignment_type": "essay",
     "student_id": "francisemily_70174_10037896_BUSN 198R - Assignment #3"
   },
@@ -350,5 +350,17 @@
     "feedback_summary": null,
     "assignment_type": "essay",
     "student_id": "yangharper_69368_10017824_Assignment 3_ Reflections and Lessons from the Internship"
+  },
+  {
+    "id": "a2dcc5b1-5c06-43b3-a4c2-9fc47eeff3da",
+    "filename": "1d794034-aa45-42d0-ae4d-8be738ec486b.pdf",
+    "upload_time": "2025-12-24T17:34:17.637276",
+    "status": "UPLOADED",
+    "score": null,
+    "max_score": null,
+    "feedback_summary": null,
+    "assignment_type": "essay",
+    "student_id": "1d794034-aa45-42d0-ae4d-8be738ec486b",
+    "rubric_path": "data/uploads/rubric_2a8354d5-4842-40bb-93f6-0f5f017d1666.txt"
   }
 ]

@@ -8,10 +8,13 @@ class EssayGradingStrategy(GradingStrategy):
         self.llm = llm_client
 
     def grade(self, content: str, rubric: Rubric, student_id: str) -> GradingResult:
-        print(f"DEBUG: Grading essay for {student_id}...")
+        print(f"DEBUG: Content Length: {len(content)}")
         
-        # 1. Construct Prompt
-        rubric_str = "\n".join([f"- {c.name}: {c.description} (Max: {c.max_points})" for c in rubric.criteria])
+        # 1. Construct Prompt with Ephemeral IDs
+        # We assign an ID like "id_0", "id_1" to each criterion for reliable matching
+        criteria_map = {f"id_{i}": c for i, c in enumerate(rubric.criteria)}
+        
+        rubric_str = "\n".join([f"- ID: id_{i} | Name: {c.name}: {c.description} (Max: {c.max_points})" for i, c in enumerate(rubric.criteria)])
         
         prompt = f"""
         You are an expert academic grader. Grade the following essay based strictly on the provided rubric.
@@ -23,34 +26,44 @@ class EssayGradingStrategy(GradingStrategy):
         {content}
         
         ## INSTRUCTIONS
-        1. Evaluate the essay for each rubric criteria.
-        2. Provide a specific score and constructive feedback for each.
-        3. Identify EXACT QUOTES from the essay that support your evaluation for each criteria. These must be verbatim strings from the text.
-        4. Calculate the total score.
-        5. Provide an overall summary feedback.
+        1. Evaluate the essay for EVERY rubric criteria listed above. Do not skip any.
+        2. You MUST use the associated "ID" (e.g. id_0) for each evaluation item.
+        3. Provide a specific score and constructive feedback for each.
+        4. Identify EXACT QUOTES from the essay that support your evaluation for each criteria. These must be verbatim strings from the text.
+        5. Calculate the total score.
+        6. Provide an overall summary feedback.
         """
 
         # 2. Call LLM (expecting structure match)
-        # Note: We are mocking the structure return for now by asking for JSON and parsing into our internal Pydantic model
-        # ideally we'd have a specific Pydantic model just for the LLM output 
         
-        response_model = GradingResult # Reuse the main model for simplicity or define a specific localized one
+        from pydantic import BaseModel, ConfigDict
+        from typing import List
         
-        # For this prototype, let's ask for the raw evaluation and map it manually or try the direct generate_json
-        # We need to ensure the LLM output matches the GradingResult fields: 
-        # submission_id, student_id, assignment_type, total_score, max_score, feedback, detailed_results
-        
-        # To make it easier for the LLM, let's define a simpler intermediate schema
-        from pydantic import BaseModel
-        from typing import List, Dict
-        
+        class CriterionEval(BaseModel):
+            criteria_id: str
+            score: float
+            feedback: str
+            citations: List[str]
+            model_config = ConfigDict(extra='forbid')
+
         class LLMEvaluation(BaseModel):
-            criteria_scores: Dict[str, float]
-            criteria_feedback: Dict[str, str]
-            criteria_citations: Dict[str, List[str]]
+            criteria_evaluations: List[CriterionEval]
             overall_feedback: str
+            model_config = ConfigDict(extra='forbid')
             
         result_content = self.llm.generate_json(prompt, LLMEvaluation)
+
+        # Debug: Log returned IDs
+        try:
+             if result_content:
+                 ids = [e.criteria_id for e in result_content.criteria_evaluations]
+                 with open("debug_llm_ids.txt", "w") as f:
+                     f.write(str(ids))
+             else:
+                 with open("debug_llm_ids.txt", "w") as f:
+                     f.write("None returned")
+        except Exception as e:
+             print(f"Error logging ids: {e}")
         
         if not result_content:
             return GradingResult(
@@ -66,19 +79,29 @@ class EssayGradingStrategy(GradingStrategy):
         detailed_results = []
         total_score = 0.0
         
-        for criterion in rubric.criteria:
-            score = result_content.criteria_scores.get(criterion.name, 0.0)
-            feedback = result_content.criteria_feedback.get(criterion.name, "")
-            citations = result_content.criteria_citations.get(criterion.name, [])
+        # Helper to find eval by ID
+        def find_eval(cid):
+             for e in result_content.criteria_evaluations:
+                 if e.criteria_id == cid: return e
+             return None
+
+        from src.models import CriterionScore
+
+        for cid, criterion in criteria_map.items():
+            eval_item = find_eval(cid)
+            score = eval_item.score if eval_item else 0.0
+            feedback = eval_item.feedback if eval_item else "No feedback provided."
+            citations = eval_item.citations if eval_item else []
+            
             total_score += score
             
             detailed_results.append(GradingFeedback(
                 score=score,
                 feedback=feedback,
                 citations=citations,
-                criteria_scores={criterion.name: score}
+                criteria_scores=[CriterionScore(criteria_name=criterion.name, score=score)]
             ))
-
+            
         return GradingResult(
             submission_id="generated_id", # Placeholder
             student_id=student_id,
